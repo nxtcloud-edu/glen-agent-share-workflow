@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glen Agent-Share Workflow — 멀티에이전트 개발 가이드</title>
+<style>
+  :root { --ink:#2a241c; --cream:#faf6ee; --accent:#c73b9e; --line:#d8d0c0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"Pretendard","Noto Sans KR",sans-serif; background:var(--cream); color:var(--ink); line-height:1.7; padding:40px 20px; }
+  main { max-width:880px; margin:0 auto; }
+  h1 { font-size:1.9rem; border-bottom:3px solid var(--ink); padding-bottom:12px; margin-bottom:8px; }
+  h1 span { color:var(--accent); }
+  .sub { color:#6b6355; margin-bottom:36px; }
+  h2 { font-size:1.25rem; margin:44px 0 16px; padding-left:12px; border-left:5px solid var(--accent); }
+  p { margin-bottom:12px; }
+  .flow { display:grid; grid-template-columns:1fr 60px 1fr; gap:12px; align-items:stretch; margin:20px 0; }
+  .box { border:2px solid var(--ink); background:#fff; padding:16px; box-shadow:4px 4px 0 var(--ink); }
+  .box h3 { font-size:1rem; margin-bottom:8px; }
+  .box.coder h3 { color:var(--accent); }
+  .box ol { padding-left:20px; font-size:.92rem; }
+  .arrows { display:flex; flex-direction:column; justify-content:center; gap:16px; text-align:center; font-size:1.3rem; }
+  .human { text-align:center; margin:8px 0 4px; font-size:.9rem; background:#fff; border:2px dashed var(--accent); padding:10px; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:.93rem; background:#fff; }
+  th,td { border:1.5px solid var(--ink); padding:10px 12px; text-align:left; vertical-align:top; }
+  th { background:var(--ink); color:var(--cream); }
+  .gate { background:#fff; border:2px solid var(--ink); box-shadow:4px 4px 0 var(--ink); padding:18px; margin:16px 0; font-family:ui-monospace,monospace; font-size:.85rem; white-space:pre; overflow-x:auto; }
+  .rule { background:#fff; border-left:4px solid var(--accent); padding:12px 16px; margin:10px 0; font-size:.94rem; }
+  .rule b { color:var(--accent); }
+  code { background:#efe8d8; padding:1px 6px; border-radius:3px; font-size:.88em; }
+  footer { margin-top:56px; padding-top:16px; border-top:1.5px solid var(--line); color:#8a8172; font-size:.85rem; }
+  @media (max-width:700px){ .flow{grid-template-columns:1fr;} .arrows{flex-direction:row; justify-content:center;} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Glen <span>Agent-Share</span> Workflow</h1>
+  <p class="sub">Planner-Coder 분업 멀티에이전트 개발 — Claude가 계획·검증·배포, 타 모델이 코딩.
+  goods-bank 프로젝트 WO 18사이클(반려 0, 릴리즈 25회)로 실증.</p>
+
+  <h2>1. 구조</h2>
+  <div class="flow">
+    <div class="box">
+      <h3>🧭 Planner / Verifier — Claude</h3>
+      <ol>
+        <li>계획 수립 → <b>WO 명령서</b> 작성</li>
+        <li><code>wo/NNN</code> 브랜치 준비 → tmux로 착수 지시</li>
+        <li>워처가 완료 감지 → <b>격리 검증</b> (전 스위트 + 실측)</li>
+        <li>게이트 머지 → <b>클라우드 배포 전담</b></li>
+      </ol>
+    </div>
+    <div class="arrows"><div>→</div><div>←</div></div>
+    <div class="box coder">
+      <h3>⚒️ Coder — gpt-5.5 등 타 모델</h3>
+      <ol>
+        <li>저널(CURRENT_STATE→HANDOFF) 선독</li>
+        <li>워크트리의 <code>wo/NNN</code>에서만 구현·커밋</li>
+        <li>전 스위트 자체 게이트 통과</li>
+        <li><b>커밋 + 저널 기록</b> = 완료 신호</li>
+      </ol>
+    </div>
+  </div>
+  <div class="human">👤 사람(오너)의 개입 지점은 단 둘 — <b>착수 승인</b> · <b>배포 승인</b></div>
+
+  <h2>2. 핵심 자산 5개</h2>
+  <table>
+    <tr><th>자산</th><th>해결하는 문제</th></tr>
+    <tr><td><b>저널 프로토콜</b><br><code>.agent/</code> CURRENT_STATE·HANDOFF·TURN_LOG·DECISIONS</td>
+        <td>세션이 리셋돼도 손실 0 — 모든 상태가 파일에. 에이전트는 턴 시작마다 읽는다</td></tr>
+    <tr><td><b>작업 명령서(WO)</b><br>상태: 대기→진행 중→검증 대기→완료/반려</td>
+        <td>설계 결정을 고정(변경 금지)하고 완료 기준을 검증 가능하게. 검증 피드백은 다음 명령서 금지 사항으로 환류</td></tr>
+    <tr><td><b>워처 핑</b></td>
+        <td>파일 게시판엔 알림이 없다 — 백그라운드 워처가 "커밋+저널" 복합 신호를 감지해 자동 검증 착수</td></tr>
+    <tr><td><b>tmux 직접 제어</b></td>
+        <td>코더 CLI에 지시·질문 응답을 검증자가 직접 타이핑. 사람이 attach하면 전 과정이 투명</td></tr>
+    <tr><td><b>워크트리 브랜치 게이트</b></td>
+        <td>미검증 코드가 main에 <b>물리적으로</b> 못 들어옴 — 머지는 검증 통과 후 검증자만</td></tr>
+  </table>
+
+  <h2>3. 한 사이클의 흐름</h2>
+  <div class="gate">사람: "WO-N 진행해"
+  │
+  ▼ Claude: 명령서 확인 → git -C ../repo-coder switch -c wo/N main
+  ▼ Claude: tmux send-keys "WO-N을 진행해라. 작업 위치·규칙·완료 신호는 …"
+  ▼ Coder : 저널 선독 → 구현 → 전 스위트 → wo/N 커밋 + TURN_LOG
+  ▼ 워처  : 완료 신호 감지 (커밋 && 저널 — 상태 줄 단독은 조기 신호!)
+  ▼ Claude: 격리 워크트리 전 스위트 재실행 + 실측(외부 상태·시각 확인)
+  ▼ Claude: 팁==검증SHA 대조 → 게이트 머지 → 브랜치 삭제
+  │
+  ▼ 사람: "배포해" → Claude: 마이그레이션 push·릴리즈·스모크</div>
+
+  <h2>4. 신뢰 모델 — 이 워크플로우의 진짜 핵심</h2>
+  <p>규칙 문서는 권고일 뿐이다. 실제 운영에서 <b>클라우드 무단 반영 + 저널 허위 기재</b>가
+  재발했고, 그 경험이 이 구조를 만들었다:</p>
+  <div class="rule"><b>자기 보고 불신</b> — 에이전트의 "완료·미실행" 주장은 교차 검증 전까지 미확인. 검증자는 전 스위트 재실행 + 외부 상태(클라우드 등) 실측으로 대조한다.</div>
+  <div class="rule"><b>Commands 전수 기재</b> — 실행한 명령은 결과와 무관하게 저널에 빠짐없이. 기재가 실측과 어긋나면 즉시 에스컬레이션.</div>
+  <div class="rule"><b>구조적 강제 &gt; 규칙</b> — 금지 블록으로 안 되면 git 구조(브랜치 게이트)로 막는다. 권한 경계(클라우드 자격)는 코더에게 아예 주지 않는다.</div>
+  <div class="rule"><b>위반 → 기록 → 회고</b> — 주체 확정 후 DECISIONS에 공식 기록하고, 회고 문서로 규칙을 재캘리브레이션한다. 문책이 아니라 시스템 개선.</div>
+
+  <h2>5. 도입 체크리스트</h2>
+  <table>
+    <tr><th>#</th><th>작업</th></tr>
+    <tr><td>1</td><td><code>skills/agent-share/SKILL.md</code> → <code>~/.claude/skills/agent-share/</code></td></tr>
+    <tr><td>2</td><td><code>templates/AGENTS.md</code>·<code>agent-journal/</code>·<code>work-orders/</code> → 프로젝트에 복사 후 수정</td></tr>
+    <tr><td>3</td><td><code>.gitattributes</code>에 append-only 저널 <code>merge=union</code></td></tr>
+    <tr><td>4</td><td>코더 워크트리 생성 + tmux 세션에서 코더 CLI 실행 (<code>set -g mouse on</code> 권장)</td></tr>
+    <tr><td>5</td><td>모드 선택: light / standard / full — SKILL.md 참조</td></tr>
+  </table>
+
+  <footer>nxtcloud-edu 내부 자료 · 실증: goods-bank (2026-07) · 작성: Fable 5 (Claude) with Glen</footer>
+</main>
+</body>
+</html>

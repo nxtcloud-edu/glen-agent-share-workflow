@@ -1,0 +1,3 @@
+# append-only 공유 저널 — 브랜치 머지 시 양쪽 추가분을 모두 보존
+# (append-only 파일 전용 — 일반 파일에 쓰면 위험)
+.agent/TURN_LOG.md merge=union

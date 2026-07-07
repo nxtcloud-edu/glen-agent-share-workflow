@@ -352,25 +352,22 @@ Planner-Coder 분업의 핵심. `work-orders/WO-NNN-<슬러그>.md`:
 ## 3. 신뢰·검증 규칙 (standard)
 
 - **자기 보고는 교차 검증 전까지 미확인** — 검증자는 격리 워크트리에서 전 스위트 재실행 + 외부 상태(클라우드 등) 실측
+- 실측 1단계는 `scripts/check-journal.sh <저널디렉토리>` 로 기계화 — CURRENT_STATE HEAD·active 턴·WO↔브랜치 대조 (`--strict` 로 게이트)
 - 위반 발견 시: 주체 확정 전 기록 보류 → 확정 시 DECISIONS에 공식 기록 → 회고 문서로 재캘리브레이션 (문책이 아니라 규칙 갱신)
 - 실측 모순(저널 주장 ≠ 관측)은 **즉시 에스컬레이션** — 보류하면 신뢰 비용이 복리로 는다
 
 ## 4. 워처 핑 (full)
 
-파일 게시판의 알림 부재를 백그라운드 워처로 보완 (검증자 세션이 살아있는 동안):
+파일 게시판의 알림 부재를 백그라운드 워처로 보완 (검증자 세션이 살아있는 동안). `templates/watcher.sh`:
 
 ```bash
 # 완료 신호 = "새 커밋 + TURN_LOG 기록" (둘 다). 상태 줄 단독은 조기 신호 — Gotcha 1
-BASE=$(git log -1 --format=%H)
-while true; do
-  CUR=$(git log -1 --format=%H)
-  if [ "$CUR" != "$BASE" ] && grep -q "<agent> — WO-NNN" 저널/TURN_LOG.md; then
-    echo "완료 감지: $(git log -1 --oneline)"; exit 0
-  fi; [ "$CUR" != "$BASE" ] && BASE="$CUR"; sleep 30
-done
+watcher.sh ../<repo>-<agent> "<agent> — WO-NNN" --tmux <session>
+# exit 0 = 완료 감지 / exit 2 = tmux 화면에서 정체(승인 타임아웃 등) 감지 → 사람 개입
 ```
 
-검증자는 이 신호로 릴레이 없이 자동 검증 착수. (Claude Code면 Monitor persistent 도구 사용)
+`--tmux` 를 주면 커밋 없는 차단(Gotcha 8의 dangerous-command 타임아웃)도 화면에서 포착한다.
+검증자는 완료 신호로 릴레이 없이 자동 검증 착수. (Claude Code면 Monitor persistent 도구 사용)
 
 ## 5. tmux 직접 제어 (full)
 
@@ -378,11 +375,11 @@ done
 
 ```bash
 tmux new-session -d -s <agent> -c <작업 디렉토리>   # 사람은 tmux attach -t <agent>로 감독
-tmux capture-pane -t <agent> -p | tail -20          # 화면 읽기 (진행/유휴 판별)
-tmux send-keys -t <agent> "WO-012 진행해" Enter      # 지시 타이핑
+scripts/tmux-send-safe.sh <agent> "WO-012 진행해" --enter   # busy 사라진 뒤에만 전송
 ```
 
-규칙: **유휴 프롬프트일 때만 send-keys** (작업 중 입력은 인터럽트가 되는 TUI가 많다).
+규칙: **유휴 프롬프트일 때만 send-keys** (작업 중 입력은 인터럽트가 되는 TUI가 많다 — Gotcha 3).
+`tmux-send-safe.sh` 가 capture-pane 으로 busy 패턴을 확인하고 유휴가 될 때까지 대기한다.
 사람이 attach하면 모든 지시가 눈에 보인다 — 투명성이 기본 내장.
 
 ## 6. 워크트리 브랜치 게이트 (full)
@@ -390,11 +387,14 @@ tmux send-keys -t <agent> "WO-012 진행해" Enter      # 지시 타이핑
 코더를 별도 워크트리 + WO별 브랜치에 격리하면 **미검증 코드가 main에 못 들어온다**:
 
 ```bash
-git worktree add ../<repo>-<agent> -b <agent>/idle        # 최초 1회 (상설)
-git -C ../<repo>-<agent> switch -c wo/NNN main             # WO 시작마다
+# 최초 1회: 워크트리 + 가드 마커 + 훅(절대경로 hooksPath) + wo 브랜치 + 설치
+scripts/setup-worktree.sh <repo> <agent> --hooks-src templates/hooks --wo NNN --install "pnpm install"
 # 코더는 wo/NNN에 커밋 → 검증 통과 시 검증자만 main에 머지·푸시
 ```
 
+- 게이트 강제는 `templates/hooks/`의 `pre-commit`(코더 main 커밋 차단)+`pre-push`(코더 push 차단).
+  마커(`.agent-coder-guard`)로 코더 워크트리에서만 발동 — planner 워크트리는 영향 없음
+- **`core.hooksPath`는 반드시 절대경로** — 상대경로는 링크된 워크트리에서 훅이 조용히 사라진다 (Gotcha 7)
 - append-only 저널은 `.gitattributes`에 `merge=union` 지정 (머지 충돌 원천 차단)
 - **워크트리가 못 막는 것**: 로컬 DB·E2E 포트는 여전히 공유 — 전 스위트는 한 번에 하나만 (순차 규율 유지)
 - 워크트리마다 `pnpm install` 필요 (pnpm 스토어 덕에 수 초)
@@ -409,10 +409,17 @@ git -C ../<repo>-<agent> switch -c wo/NNN main             # WO 시작마다
 | `scripts/new-share.sh <agent> <topic>` | 공유 폴더+turns+plan+progress 스캐폴딩 | 날짜·hyphen-case 명명은 순수 규약 — LLM이 자주 틀림 |
 | `scripts/new-turn.sh <dir> <agent> <topic> <role>` | 턴 파일 생성 (타임스탬프·명명 자동, 덮어쓰기 거부) | 명명 규칙 + "턴 파일 절대 덮어쓰기 금지" 강제 |
 | `scripts/rotate-journal.sh <저널디렉토리>` | 500줄 초과 시 아카이브 이관, 최근 10턴 유지 | 미머지 `wo/*` 게이트로 merge=union 부활 원천 차단 (Gotcha 6) |
-| `templates/hooks/pre-commit` | 저널의 기존 줄 삭제·수정 차단 (append-only 강제) | 저장소 수준 훅 → 커밋하는 *모든* 에이전트에 적용 |
+| `scripts/check-journal.sh <저널디렉토리>` | CURRENT_STATE HEAD·active 턴·WO↔브랜치 대조 | 검증자 실측 1단계 기계화 — 자기 보고 불신(Gotcha 2)의 진입점 |
+| `scripts/setup-worktree.sh <repo> <agent>` | 코더 워크트리+가드 마커+훅+wo 브랜치 셋업 | 절대경로 hooksPath 로 게이트 무음 실패(Gotcha 7) 방지 |
+| `scripts/tmux-send-safe.sh <session> <text>` | busy 패턴 사라진 뒤에만 send-keys | 작업 중 입력=인터럽트(Gotcha 3) 자동 회피 |
+| `templates/hooks/pre-commit` | (A)코더 main 커밋 차단 (B)저널 기존 줄 삭제·수정 차단 | 저장소 수준 훅 → 커밋하는 *모든* 에이전트에 적용 |
+| `templates/hooks/pre-push` | 코더 워크트리 push 전면 차단 | 원격 반영은 검증자 전담 — 물리적 강제 |
+| `templates/hooks/claude-stop.sh` | 턴 종료 시 active 턴 잔존 감지 (Claude Stop 훅) | Claude 참여자의 저널 위생 자동 점검 |
+| `templates/watcher.sh` | 완료 신호(커밋+저널) + tmux 정체 감지 | Gotcha 6의 "커밋 없는 차단"을 tmux 화면에서 포착 |
 
-`pre-commit` 훅은 문턱을 올릴 뿐 우회(`--no-verify`) 가능 — Gotcha 2의 "검증자 외부 상태 실측"을
-대체하지 않는다. 로테이션 스크립트가 정상적으로 `--no-verify` 커밋을 사용한다.
+훅은 문턱을 올릴 뿐 우회(`--no-verify`) 가능 — Gotcha 2의 "검증자 외부 상태 실측"을 대체하지 않는다.
+로테이션 스크립트가 정상적으로 `--no-verify` 커밋을 사용한다. **워크트리 게이트는 `core.hooksPath`를
+절대경로로 설정해야 한다** (상대경로는 링크된 워크트리에서 훅이 조용히 사라진다 — Gotcha 7).
 
 ## Gotchas
 
@@ -423,5 +430,6 @@ git -C ../<repo>-<agent> switch -c wo/NNN main             # WO 시작마다
 3. **tmux 작업 중 입력 = 인터럽트** — TUI 에이전트는 computing 중 입력을 턴 중단으로 처리. capture-pane으로 유휴 프롬프트 확인 후 send-keys. (2026-07-06)
 4. **append-only 저널 머지 충돌** — 브랜치 분리 시 TURN_LOG가 매 사이클 충돌. `merge=union` gitattribute가 정답 (append-only 파일 전용 — 일반 파일에 쓰면 위험).
 5. **워크트리 ≠ 완전 격리** — 로컬 DB·포트·도커는 공유. 동시 전 스위트 실행 금지 규율은 워크트리 도입 후에도 유지.
-6. **merge=union 파일은 truncate가 안 먹힌다** — union 머지는 양쪽 브랜치의 줄을 모두 보존하므로, main에서 TURN_LOG를 아카이브로 잘라내도 이전 버전 위에 append한 WO 브랜치와 머지하면 잘라낸 내용이 통째로 부활한다. 로테이션은 모든 WO 브랜치가 main에 머지된 정지 시점에서만 수행하고 DECISIONS.md에 기록.
-7. **코더 하네스의 dangerous-command 승인 프롬프트는 채팅으로 승인 불가** — Hermes CLI는 위험 명령(대량 `git mv`·`git rm -r`·설정 덮어쓰기)에 **별도 TTY 승인 프롬프트**를 띄우고, 입력이 없으면 **60초 타임아웃으로 자동 거부**("⏱ Timeout — denying command" → 도구에 "User denied this command" 반환, WO-003에서 2회 실측). 채팅 메시지로 "승인한다"를 보내도 프롬프트에는 전달되지 않는다 — 승인 주체는 대화가 아니라 TTY다. 공식 우회는 `hermes --yolo`(모든 dangerous 승인 프롬프트 바이패스). 무인 Planner-Coder 루프에서는 **워크트리 격리 + push 금지 + 검증 게이트가 전제된 경우에만** --yolo로 구동하고, 그 전제가 없으면 사람이 tmux attach로 프롬프트를 직접 승인한다. 워처는 이 차단을 감지 못하므로(커밋 없음) 정체 시 capture-pane에서 "Timeout — denying"을 먼저 찾을 것. (2026-07-06)
+6. **merge=union 파일은 truncate가 안 먹힌다** — union 머지는 양쪽 브랜치의 줄을 모두 보존하므로, main에서 TURN_LOG를 아카이브로 잘라내도 이전 버전 위에 append한 WO 브랜치와 머지하면 잘라낸 내용이 통째로 부활한다. 로테이션은 모든 WO 브랜치가 main에 머지된 정지 시점에서만 수행하고 DECISIONS.md에 기록. `rotate-journal.sh` 가 미머지 `wo/*` 게이트로 강제.
+7. **상대경로 `core.hooksPath` 는 링크된 워크트리에서 훅을 조용히 무력화한다** — `git config core.hooksPath .githooks` 처럼 상대경로로 두면, 각 워크트리가 *자기 루트 기준*으로 `.githooks` 를 찾는다. 훅은 보통 main 워크트리에만 설치되므로, 코더 워크트리에서는 디렉토리가 없어 훅이 **전부 사라진다**(에러 없이 통과 — 실측: 코더 push 게이트가 무음으로 열림). 반드시 **절대경로**로 설정할 것. `setup-worktree.sh` 가 절대경로를 쓴다. (2026-07-07)
+8. **코더 하네스의 dangerous-command 승인 프롬프트는 채팅으로 승인 불가** — Hermes CLI는 위험 명령(대량 `git mv`·`git rm -r`·설정 덮어쓰기)에 **별도 TTY 승인 프롬프트**를 띄우고, 입력이 없으면 **60초 타임아웃으로 자동 거부**("⏱ Timeout — denying command" → 도구에 "User denied this command" 반환, WO-003에서 2회 실측). 채팅 메시지로 "승인한다"를 보내도 프롬프트에는 전달되지 않는다 — 승인 주체는 대화가 아니라 TTY다. 공식 우회는 `hermes --yolo`(모든 dangerous 승인 프롬프트 바이패스). 무인 Planner-Coder 루프에서는 **워크트리 격리 + push 금지 + 검증 게이트가 전제된 경우에만** --yolo로 구동하고, 그 전제가 없으면 사람이 tmux attach로 프롬프트를 직접 승인한다. 워처는 이 차단을 감지 못하므로(커밋 없음) 정체 시 capture-pane에서 "Timeout — denying"을 먼저 찾을 것. (2026-07-06)

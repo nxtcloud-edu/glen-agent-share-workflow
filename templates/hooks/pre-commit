@@ -1,16 +1,31 @@
 #!/bin/sh
-# append-only 저널 가드 (git pre-commit) — 저장소 수준이므로 커밋하는 *모든* 에이전트에 적용.
-# 스테이징된 TURN_LOG.md / TURN_LOG-archive-*.md 에서 기존 줄의 삭제·수정을 차단한다.
-# append-only 는 merge=union 안전성의 전제 — 권고로는 못 지킨다.
+# git pre-commit 가드 — 저장소 수준이므로 커밋하는 *모든* 에이전트에 적용.
+#  (A) 코더 브랜치 게이트: .agent-coder-guard 마커가 있는 워크트리에서 main/master 직접 커밋 차단
+#  (B) append-only 저널 가드: TURN_LOG.md / TURN_LOG-archive-*.md 의 기존 줄 삭제·수정 차단
+#      (append-only 는 merge=union 안전성의 전제 — 권고로는 못 지킨다)
 #
 # 설치(둘 중 하나):
 #   1) 단일 체크아웃:  cp templates/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 #   2) 워크트리 공유:   mkdir -p .githooks && cp templates/hooks/pre-commit .githooks/ \
 #                       && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks
+#      (코더 게이트는 setup-worktree.sh 가 마커까지 배치)
 #
 # 우회: git commit --no-verify (로테이션 스크립트가 사용). 훅은 문턱을 올릴 뿐,
 #       Gotcha 2 의 "검증자 외부 상태 실측" 원칙을 대체하지 않는다.
 
+# (A) 코더 브랜치 게이트 — 마커 있는 워크트리에서 main/master 직접 커밋 차단
+top=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -n "$top" ] && [ -f "$top/.agent-coder-guard" ]; then
+  br=$(git symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
+  case "$br" in
+    main|master)
+      echo "차단: 코더 워크트리에서 $br 직접 커밋 금지 — wo/NNN 브랜치에서 작업하세요." >&2
+      echo "      머지는 검증 통과 후 검증자만 수행합니다." >&2
+      exit 1 ;;
+  esac
+fi
+
+# (B) append-only 저널 가드
 files=$(git diff --cached --name-only --diff-filter=ACMR \
         | grep -E '(^|/)TURN_LOG(-archive-[0-9]{6})?\.md$' || true)
 [ -z "$files" ] && exit 0

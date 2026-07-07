@@ -34,10 +34,10 @@
 |---|---|---|
 | 저널 프로토콜 | 세션 독립 공유 기억 (CURRENT_STATE·HANDOFF·TURN_LOG·DECISIONS) | `templates/agent-journal/` |
 | 작업 명령서(WO) 채널 | 설계 고정·완료 기준·절대 금지 블록, 상태 머신 | `templates/work-orders/` |
-| 워처 핑 | 완료 신호(커밋+저널 복합 조건) 감지 → 자동 검증 착수 | `templates/watcher.sh` |
-| tmux 직접 제어 | 코더 CLI에 지시·질문 응답 (유휴 시에만 send-keys) | 스킬 §5 |
-| 워크트리 브랜치 게이트 | wo/NNN 격리, 머지는 검증자 전담, 저널은 merge=union | 스킬 §6 + `templates/gitattributes.example` |
-| 스크립트(기계적 강제) | 폴더·턴 스캐폴딩, 저널 로테이션(merge=union 게이트), append-only 훅 | `skills/agent-share/scripts/` + `templates/hooks/` |
+| 워처 핑 | 완료 신호(커밋+저널) 감지 + tmux 정체 감지 → 자동 검증/개입 | `templates/watcher.sh` |
+| tmux 직접 제어 | 코더 CLI에 지시 (busy 사라진 뒤에만 send-keys) | `scripts/tmux-send-safe.sh` + 스킬 §5 |
+| 워크트리 브랜치 게이트 | wo/NNN 격리, 코더 main커밋·push 훅 차단, 저널 merge=union | `scripts/setup-worktree.sh` + `templates/hooks/` |
+| 스크립트(기계적 강제) | 폴더·턴 스캐폴딩, 저널 로테이션·대조, 게이트 훅 | `skills/agent-share/scripts/` + `templates/hooks/` |
 
 ## 도입 순서
 
@@ -45,15 +45,15 @@
 2. **프로젝트 초기화**: `templates/AGENTS.md`를 프로젝트 루트에, `templates/agent-journal/`을
    `.agent/`로, `templates/work-orders/`를 `.agent/work-orders/`로 복사 후 프로젝트에 맞게 수정
 3. **`.gitattributes`**: `templates/gitattributes.example` 참조 — append-only 저널에 merge=union
-4. **append-only 훅**: `templates/hooks/pre-commit`을 `.githooks/`에 복사 후
-   `git config core.hooksPath .githooks` (저널의 과거 기록 삭제·변조를 커밋 단계에서 차단)
-5. **코더 환경**: `git worktree add ../<repo>-coder -b coder/idle` + tmux 세션에서 코더 CLI 실행
-   (사람이 attach하면 모든 지시가 투명하게 보임)
-6. **모드 선택**: 스킬의 light(문서 인계만) / standard(+저널·명령서·신뢰 규칙) /
+4. **코더 환경 + 게이트**: `scripts/setup-worktree.sh <repo> coder --hooks-src templates/hooks --wo NNN`
+   — 워크트리·가드 마커·훅(pre-commit/pre-push, **절대경로** hooksPath)·wo 브랜치를 한 번에 셋업
+   (코더의 main 직접 커밋·push를 훅이 물리적으로 차단, tmux로 CLI 실행 시 지시가 투명하게 보임)
+5. **모드 선택**: 스킬의 light(문서 인계만) / standard(+저널·명령서·신뢰 규칙) /
    full(+워처·tmux·게이트) 중 프로젝트 규모에 맞게 — 상세는 SKILL.md
 
-> 저널 스캐폴딩·로테이션은 `skills/agent-share/scripts/`의 `new-share.sh`·`new-turn.sh`·
-> `rotate-journal.sh`가 담당 (명명·날짜·merge=union 정지 시점 게이트를 스크립트가 강제).
+> 반복 절차는 `skills/agent-share/scripts/`가 담당: 스캐폴딩(`new-share`·`new-turn`),
+> 저널 로테이션(`rotate-journal`, merge=union 게이트)·대조(`check-journal`), 안전 전송(`tmux-send-safe`).
+> 명명·날짜·전제조건 게이트를 스크립트가 강제해 LLM 판단 오류를 차단한다.
 
 ## 운영 규칙 요약 (전체는 SKILL.md)
 

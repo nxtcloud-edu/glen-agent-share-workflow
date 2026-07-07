@@ -6,6 +6,7 @@
 
 1. **작업 시작 전**: `.agent/CURRENT_STATE.md` → `.agent/HANDOFF.md` 순으로 읽고,
    `git status --short --branch`로 자기 보고와 실제 상태를 대조한다.
+   검증자는 `check-journal.sh .agent`로 HEAD·active 턴·WO↔브랜치 불일치를 기계 대조한다.
 2. **의미 있는 턴 종료 시**: `.agent/TURN_LOG.md`에 append-only로 기록 —
    Intent / Files changed / **Commands·verification (전수 기재, 미실행은 "실행 안 함" 명시)** / Decisions / Handoff.
 3. **상태 변화 시**: `CURRENT_STATE.md`(HEAD·활성 소유자·완료 목록)와 `HANDOFF.md`(다음 안전 액션)를 갱신한다.
@@ -19,6 +20,8 @@
 ## 워크트리·브랜치 게이트
 
 - Coder는 `../<repo>-coder` 워크트리의 `wo/NNN` 브랜치에서만 작업·커밋. main 직접 커밋·푸시 금지.
+  이 금지는 권고가 아니라 훅이 강제한다 (`pre-commit`=main 커밋 차단, `pre-push`=push 차단;
+  `.agent-coder-guard` 마커로 코더 워크트리에서만 발동). 셋업: `setup-worktree.sh`.
 - 머지는 검증 통과 후 검증자(Planner)만 수행.
 - 완료 신호 = "wo/NNN 커밋 + TURN_LOG 기록" (상태 줄만 먼저 바꾸지 않는다).
 - 전 스위트(테스트)는 한 번에 하나만 실행 (로컬 DB·포트는 워크트리 간 공유).

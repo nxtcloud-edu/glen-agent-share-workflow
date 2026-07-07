@@ -361,12 +361,14 @@ Planner-Coder 분업의 핵심. `work-orders/WO-NNN-<슬러그>.md`:
 파일 게시판의 알림 부재를 백그라운드 워처로 보완 (검증자 세션이 살아있는 동안). `templates/watcher.sh`:
 
 ```bash
-# 완료 신호 = "새 커밋 + TURN_LOG 기록" (둘 다). 상태 줄 단독은 조기 신호 — Gotcha 1
-watcher.sh ../<repo>-<agent> "<agent> — WO-NNN" --tmux <session>
+# 완료 신호 = "새 커밋 + TURN_LOG 완료 헤더" (둘 다). 상태 줄 단독은 조기 신호 — Gotcha 1
+watcher.sh ../<repo>-<agent> "<agent> (Coder) — WO-NNN" --tmux <session>
+# 식별자는 완료 헤더(^## …) 안에서 매치 — 느슨한 매치는 조기 오탐 (Gotcha 9)
 # exit 0 = 완료 감지 / exit 2 = tmux 화면에서 정체(승인 타임아웃 등) 감지 → 사람 개입
 ```
 
 `--tmux` 를 주면 커밋 없는 차단(Gotcha 8의 dangerous-command 타임아웃)도 화면에서 포착한다.
+워처의 커밋 판정은 워크트리 HEAD 스냅샷 기준이라 플래너의 main 전진에 오탐하지 않는다 (Gotcha 10).
 검증자는 완료 신호로 릴레이 없이 자동 검증 착수. (Claude Code면 Monitor persistent 도구 사용)
 
 ## 5. tmux 직접 제어 (full)
@@ -433,3 +435,6 @@ scripts/setup-worktree.sh <repo> <agent> --hooks-src templates/hooks --wo NNN --
 6. **merge=union 파일은 truncate가 안 먹힌다** — union 머지는 양쪽 브랜치의 줄을 모두 보존하므로, main에서 TURN_LOG를 아카이브로 잘라내도 이전 버전 위에 append한 WO 브랜치와 머지하면 잘라낸 내용이 통째로 부활한다. 로테이션은 모든 WO 브랜치가 main에 머지된 정지 시점에서만 수행하고 DECISIONS.md에 기록. `rotate-journal.sh` 가 미머지 `wo/*` 게이트로 강제.
 7. **상대경로 `core.hooksPath` 는 링크된 워크트리에서 훅을 조용히 무력화한다** — `git config core.hooksPath .githooks` 처럼 상대경로로 두면, 각 워크트리가 *자기 루트 기준*으로 `.githooks` 를 찾는다. 훅은 보통 main 워크트리에만 설치되므로, 코더 워크트리에서는 디렉토리가 없어 훅이 **전부 사라진다**(에러 없이 통과 — 실측: 코더 push 게이트가 무음으로 열림). 반드시 **절대경로**로 설정할 것. `setup-worktree.sh` 가 절대경로를 쓴다. (2026-07-07)
 8. **코더 하네스의 dangerous-command 승인 프롬프트는 채팅으로 승인 불가** — Hermes CLI는 위험 명령(대량 `git mv`·`git rm -r`·설정 덮어쓰기)에 **별도 TTY 승인 프롬프트**를 띄우고, 입력이 없으면 **60초 타임아웃으로 자동 거부**("⏱ Timeout — denying command" → 도구에 "User denied this command" 반환, WO-003에서 2회 실측). 채팅 메시지로 "승인한다"를 보내도 프롬프트에는 전달되지 않는다 — 승인 주체는 대화가 아니라 TTY다. 공식 우회는 `hermes --yolo`(모든 dangerous 승인 프롬프트 바이패스). 무인 Planner-Coder 루프에서는 **워크트리 격리 + push 금지 + 검증 게이트가 전제된 경우에만** --yolo로 구동하고, 그 전제가 없으면 사람이 tmux attach로 프롬프트를 직접 승인한다. 워처는 이 차단을 감지 못하므로(커밋 없음) 정체 시 capture-pane에서 "Timeout — denying"을 먼저 찾을 것. (2026-07-06)
+9. **워처의 TURN_LOG grep 패턴은 완료 헤더 형식에 고정해야 한다** — `grep -q "hermes.*WO-NNN"` 처럼 느슨한 패턴은 플래너가 발행 턴에 적은 "Handoff: … WO-NNN" 문구와도 매치되어, 코더가 아직 작업 중(착수 커밋만 있고 완료 보고 전)인데 조기 완료로 오판한다(실측: WO-008). 완료 턴은 항상 `## <날짜> — <agent> (Coder) — WO-NNN` 헤더로 시작하므로 **헤더 라인만 추린 뒤 식별자를 매치**할 것 — `grep '^## ' TURN_LOG.md | grep -qF "<식별자>"`. 2단계로 하면 (1) 헤더 고정으로 조기 오탐을 막고 (2) `-F` 리터럴로 식별자의 괄호 등 정규식 메타문자(`(Coder)`)도 안전하다. Gotcha 1과 같은 계열 — "커밋 + TURN_LOG 기록" 복합 조건이라도 매치 패턴이 느슨하면 무력화된다. `watcher.sh` 가 이 방식을 쓴다. (2026-07-07)
+10. **워처의 커밋 판정 기준은 origin/main이 아니라 merge-base** — `tip != origin/main` 으로 "코더 신규 커밋"을 판정하면, 코더가 브랜치를 딴 뒤 플래너가 main을 전진시키는 순간(병렬 작업의 정상 패턴) 브랜치점 커밋을 신규로 오탐한다(실측: WO-023, 플래너 자신의 명령서 커밋을 신호로 오인). origin/main 기준으로 볼 땐 `tip != $(git merge-base <브랜치> origin/main)` 으로. `watcher.sh` 는 워크트리 HEAD 스냅샷(BASE)과 비교해 이 함정을 애초에 우회한다(코더 워크트리의 wo/NNN HEAD는 플래너의 main 전진에 영향받지 않으므로). (2026-07-06)
+11. **append-only 저널은 무한정 방치하면 안 된다** — `TURN_LOG.md` 는 매 턴 전문을 읽는 게시판이라, 회전 없이 누적하면 신규 에이전트의 턴 시작 컨텍스트 비용이 WO 사이클 수에 비례해 는다. git 성능은 문제가 아니다(수백KB~MB 무해) — 문제는 매 턴 읽기 비용과 리뷰 diff 노이즈. 임계값(파일 크기 또는 완료 WO 개수) 도달 시 오래된 구간을 아카이브로 스냅샷하고 활성 파일엔 최근 구간만 남기는 회전 정책을 **DECISIONS.md에 미리 명시**할 것 (vault류의 `PROGRESS.md`/`PROGRESS-archive.md` 분리 선례와 동일 문제). 이 레포는 `rotate-journal.sh`(500줄 임계 → `TURN_LOG-archive-<yyyymm>.md`, merge=union 게이트)로 구현 — 서술판의 `99_archive/`·완료-WO-개수 임계와는 네이밍·트리거만 다르다. (2026-07-07)

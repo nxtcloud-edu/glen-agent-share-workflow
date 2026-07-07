@@ -11,7 +11,7 @@
 set -eu
 
 W=${1:?워크트리 경로}
-SIG=${2:?저널 식별자 (예: "Coder — WO-012")}
+SIG=${2:?저널 식별자 (완료 헤더 안의 문구, 예: "hermes (Coder) — WO-012")}
 shift 2
 
 TMUX_SESSION=""
@@ -35,8 +35,12 @@ echo "워처 시작: $W (신호='$SIG'${TMUX_SESSION:+, tmux=$TMUX_SESSION})"
 
 while true; do
   # 완료: 새 커밋 + 저널 기록 (복합 조건)
+  # 매치는 2단계 — (1) 완료 헤더 라인(^## …)만 추린 뒤 (2) 식별자를 고정문자열로.
+  # 느슨한 매치는 플래너의 발행/핸드오프 문구까지 잡아 조기 완료로 오탐하고(Gotcha 9, WO-008),
+  # 식별자에 든 괄호 등 정규식 메타문자는 -F 로 리터럴 처리(예: "hermes (Coder) — WO-012").
   CUR=$(git -C "$W" log -1 --format=%H 2>/dev/null || echo "")
-  if [ -n "$CUR" ] && [ "$CUR" != "$BASE" ] && grep -q "$SIG" "$LOG" 2>/dev/null; then
+  if [ -n "$CUR" ] && [ "$CUR" != "$BASE" ] \
+     && grep '^## ' "$LOG" 2>/dev/null | grep -qF -- "$SIG"; then
     echo "완료 신호: $(git -C "$W" log -1 --oneline)"; exit 0
   fi
   if [ -n "$CUR" ] && [ "$CUR" != "$BASE" ]; then

@@ -2,6 +2,10 @@
 
 Append-only log of meaningful agent turns. Keep entries concise and factual.
 
+- 읽기: 턴 시작 시 최근 엔트리만 tail로 읽는다. 현재 상태의 출처는 CURRENT_STATE / HANDOFF.
+- 로테이션: 500줄 초과 시 검증자가 `TURN_LOG-archive-<yyyymm>.md`로 이관 (최근 10턴만 유지) —
+  단, 모든 WO 브랜치가 main에 머지된 시점에만 (merge=union은 truncate를 부활시킨다).
+
 ---
 
 ## <일시> — <에이전트> — <작업명>

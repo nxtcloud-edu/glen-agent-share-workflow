@@ -13,6 +13,8 @@
 5. 제품 결정은 `docs/planning/DECISIONS.md`, 협업 운영 결정·위반 기록은 `.agent/DECISIONS.md` — 섞지 않는다.
 6. **작업 분업**: <Planner 에이전트>가 계획·명령서·검증·배포, <Coder 에이전트>가 코딩 실행.
    명령서 채널: `.agent/work-orders/` (규칙은 그 README 참조).
+7. **저널 비대화**: `TURN_LOG.md`는 최근 엔트리만 tail로 읽는다. 500줄 초과 시 로테이션은
+   검증자(<Planner 에이전트>)만, 모든 WO 브랜치가 main에 머지된 시점에 수행한다.
 
 ## 워크트리·브랜치 게이트
 

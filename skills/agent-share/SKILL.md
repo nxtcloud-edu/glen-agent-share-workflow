@@ -111,6 +111,7 @@ agent-share/
 - 검증을 건너뛴 경우 이유 기록.
 - 고정 에이전트 순서를 인코딩하지 말 것. 턴 파일은 *현재 역할과 페이즈* 만 기록.
 - 최신 턴 파일은 상태 힌트일 뿐, 결정의 영구 출처는 plan / progress / review / follow-up 파일이다.
+- `turns/` 가 비대해지면 완료 상태 턴 파일을 월 단위로 `turns/archive/<yyyymm>/` 로 이동 (내용 수정 금지, 이동만 — 최신 턴 탐색 노이즈 방지).
 
 ## 턴 종료 커밋 규칙
 
@@ -330,6 +331,15 @@ goods-bank WO-001~011 사이클로 실증. 문서 포맷 위에 **지속 협업�
 철칙: **Commands 전수 기재** — 실행한 명령은 결과와 무관하게 빠짐없이. "수행하지 않음" 주장은
 검증자가 실측 대조한다. 타 에이전트의 미커밋 변경분은 자기 커밋에서 제외.
 
+비대화 관리 — append-only 파일은 무한히 자란다. 방치하면 매 턴 읽기 비용이 선형 증가하고,
+Read 도구 기본 한도(2,000줄) 초과 시 뒤쪽(최신) 엔트리가 조용히 잘려 읽힌다:
+
+- **tail-read**: 턴 시작 시 TURN_LOG는 최근 엔트리만 읽는다 (`tail` 또는 Read offset).
+  현재 상태의 영구 출처는 CURRENT_STATE / HANDOFF — 전체 재독은 불필요.
+- **로테이션**: TURN_LOG가 500줄을 넘으면 검증자가 `TURN_LOG-archive-<yyyymm>.md`로 이관하고
+  활성 파일에는 최근 10턴만 남긴다. 단 **모든 WO 브랜치가 main에 머지된 정지 시점에만** 수행하고
+  DECISIONS.md에 기록 (Gotcha 6 — merge=union 부활).
+
 ## 2. 작업 명령서 채널 (standard)
 
 Planner-Coder 분업의 핵심. `work-orders/WO-NNN-<슬러그>.md`:
@@ -398,4 +408,5 @@ git -C ../<repo>-<agent> switch -c wo/NNN main             # WO 시작마다
 3. **tmux 작업 중 입력 = 인터럽트** — TUI 에이전트는 computing 중 입력을 턴 중단으로 처리. capture-pane으로 유휴 프롬프트 확인 후 send-keys. (2026-07-06)
 4. **append-only 저널 머지 충돌** — 브랜치 분리 시 TURN_LOG가 매 사이클 충돌. `merge=union` gitattribute가 정답 (append-only 파일 전용 — 일반 파일에 쓰면 위험).
 5. **워크트리 ≠ 완전 격리** — 로컬 DB·포트·도커는 공유. 동시 전 스위트 실행 금지 규율은 워크트리 도입 후에도 유지.
-6. **코더 하네스의 dangerous-command 승인 프롬프트는 채팅으로 승인 불가** — Hermes CLI는 위험 명령(대량 `git mv`·`git rm -r`·설정 덮어쓰기)에 **별도 TTY 승인 프롬프트**를 띄우고, 입력이 없으면 **60초 타임아웃으로 자동 거부**("⏱ Timeout — denying command" → 도구에 "User denied this command" 반환, WO-003에서 2회 실측). 채팅 메시지로 "승인한다"를 보내도 프롬프트에는 전달되지 않는다 — 승인 주체는 대화가 아니라 TTY다. 공식 우회는 `hermes --yolo`(모든 dangerous 승인 프롬프트 바이패스). 무인 Planner-Coder 루프에서는 **워크트리 격리 + push 금지 + 검증 게이트가 전제된 경우에만** --yolo로 구동하고, 그 전제가 없으면 사람이 tmux attach로 프롬프트를 직접 승인한다. 워처는 이 차단을 감지 못하므로(커밋 없음) 정체 시 capture-pane에서 "Timeout — denying"을 먼저 찾을 것. (2026-07-06)
+6. **merge=union 파일은 truncate가 안 먹힌다** — union 머지는 양쪽 브랜치의 줄을 모두 보존하므로, main에서 TURN_LOG를 아카이브로 잘라내도 이전 버전 위에 append한 WO 브랜치와 머지하면 잘라낸 내용이 통째로 부활한다. 로테이션은 모든 WO 브랜치가 main에 머지된 정지 시점에서만 수행하고 DECISIONS.md에 기록.
+7. **코더 하네스의 dangerous-command 승인 프롬프트는 채팅으로 승인 불가** — Hermes CLI는 위험 명령(대량 `git mv`·`git rm -r`·설정 덮어쓰기)에 **별도 TTY 승인 프롬프트**를 띄우고, 입력이 없으면 **60초 타임아웃으로 자동 거부**("⏱ Timeout — denying command" → 도구에 "User denied this command" 반환, WO-003에서 2회 실측). 채팅 메시지로 "승인한다"를 보내도 프롬프트에는 전달되지 않는다 — 승인 주체는 대화가 아니라 TTY다. 공식 우회는 `hermes --yolo`(모든 dangerous 승인 프롬프트 바이패스). 무인 Planner-Coder 루프에서는 **워크트리 격리 + push 금지 + 검증 게이트가 전제된 경우에만** --yolo로 구동하고, 그 전제가 없으면 사람이 tmux attach로 프롬프트를 직접 승인한다. 워처는 이 차단을 감지 못하므로(커밋 없음) 정체 시 capture-pane에서 "Timeout — denying"을 먼저 찾을 것. (2026-07-06)

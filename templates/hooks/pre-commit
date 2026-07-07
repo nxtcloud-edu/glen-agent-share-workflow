@@ -1,0 +1,35 @@
+#!/bin/sh
+# append-only 저널 가드 (git pre-commit) — 저장소 수준이므로 커밋하는 *모든* 에이전트에 적용.
+# 스테이징된 TURN_LOG.md / TURN_LOG-archive-*.md 에서 기존 줄의 삭제·수정을 차단한다.
+# append-only 는 merge=union 안전성의 전제 — 권고로는 못 지킨다.
+#
+# 설치(둘 중 하나):
+#   1) 단일 체크아웃:  cp templates/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#   2) 워크트리 공유:   mkdir -p .githooks && cp templates/hooks/pre-commit .githooks/ \
+#                       && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks
+#
+# 우회: git commit --no-verify (로테이션 스크립트가 사용). 훅은 문턱을 올릴 뿐,
+#       Gotcha 2 의 "검증자 외부 상태 실측" 원칙을 대체하지 않는다.
+
+files=$(git diff --cached --name-only --diff-filter=ACMR \
+        | grep -E '(^|/)TURN_LOG(-archive-[0-9]{6})?\.md$' || true)
+[ -z "$files" ] && exit 0
+
+fail=0
+for f in $files; do
+  # 추가(A)만 있는 신규 파일은 삭제 줄이 없어 통과. 수정된 줄은 -old/+new 로 삭제 줄이 잡힘.
+  removed=$(git diff --cached --unified=0 -- "$f" \
+            | grep -E '^-' | grep -vE '^--- ' | wc -l | tr -d ' ')
+  if [ "$removed" -gt 0 ]; then
+    echo "차단: $f 는 append-only 인데 기존 ${removed}줄이 삭제/수정되었습니다." >&2
+    fail=1
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "저널은 끝에 추가만 허용됩니다. 로테이션이 필요하면 rotate-journal.sh 를 쓰세요." >&2
+  echo "의도된 예외라면: git commit --no-verify" >&2
+  exit 1
+fi
+exit 0

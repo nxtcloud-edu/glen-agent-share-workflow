@@ -151,9 +151,9 @@ agent-share/
 
 1. 프로젝트 루트 식별
 2. 짧은 토픽 슬러그 선정
-3. `agent-share/<initiator-agent>-<topic>-<yyyymmdd>/` 생성
-4. `turns/` 아래 `Turn role: initiator` 인 턴 상태 파일 생성
-5. 계획 파일 + 진행 파일 작성
+3. `scripts/new-share.sh <agent> <topic>` — 폴더·`turns/`·계획·진행 스캐폴딩 (명명·날짜 자동)
+4. `scripts/new-turn.sh <share-dir> <agent> <topic> initiator --phase planning` — 턴 파일 생성
+5. 스캐폴딩된 계획·진행 파일의 내용 작성
 6. 코드 변경 / 테스트 실행 / 스킵 사항 명시
 7. 다음 에이전트가 답해야 할 리뷰 질문 명시
 8. 핸드오프 전 턴 상태 파일 갱신
@@ -336,9 +336,9 @@ Read 도구 기본 한도(2,000줄) 초과 시 뒤쪽(최신) 엔트리가 조�
 
 - **tail-read**: 턴 시작 시 TURN_LOG는 최근 엔트리만 읽는다 (`tail` 또는 Read offset).
   현재 상태의 영구 출처는 CURRENT_STATE / HANDOFF — 전체 재독은 불필요.
-- **로테이션**: TURN_LOG가 500줄을 넘으면 검증자가 `TURN_LOG-archive-<yyyymm>.md`로 이관하고
-  활성 파일에는 최근 10턴만 남긴다. 단 **모든 WO 브랜치가 main에 머지된 정지 시점에만** 수행하고
-  DECISIONS.md에 기록 (Gotcha 6 — merge=union 부활).
+- **로테이션**: `scripts/rotate-journal.sh <저널디렉토리>` — 500줄 초과 시 `TURN_LOG-archive-<yyyymm>.md`로
+  이관하고 최근 10턴만 유지. **미머지 `wo/*` 브랜치가 있으면 스크립트가 중단**(Gotcha 6 — merge=union 부활)하므로
+  정지 시점 판단을 사람에게 맡기지 않는다. `--check`로 사전 판정. DECISIONS.md에 기록.
 
 ## 2. 작업 명령서 채널 (standard)
 
@@ -398,6 +398,21 @@ git -C ../<repo>-<agent> switch -c wo/NNN main             # WO 시작마다
 - append-only 저널은 `.gitattributes`에 `merge=union` 지정 (머지 충돌 원천 차단)
 - **워크트리가 못 막는 것**: 로컬 DB·E2E 포트는 여전히 공유 — 전 스위트는 한 번에 하나만 (순차 규율 유지)
 - 워크트리마다 `pnpm install` 필요 (pnpm 스토어 덕에 수 초)
+
+## 스크립트 (기계적 강제)
+
+기계적으로 처리 가능한 부분은 스크립트로 고정한다 — LLM 판단에 맡기면 명명 불일치·전제조건 누락으로
+사고가 난다 (Code-First). 판단이 필요한 것(계획 내용, 승인·반려, 테스트 해석)만 에이전트가 맡는다.
+
+| 스크립트 | 하는 일 | 왜 기계화 |
+|---|---|---|
+| `scripts/new-share.sh <agent> <topic>` | 공유 폴더+turns+plan+progress 스캐폴딩 | 날짜·hyphen-case 명명은 순수 규약 — LLM이 자주 틀림 |
+| `scripts/new-turn.sh <dir> <agent> <topic> <role>` | 턴 파일 생성 (타임스탬프·명명 자동, 덮어쓰기 거부) | 명명 규칙 + "턴 파일 절대 덮어쓰기 금지" 강제 |
+| `scripts/rotate-journal.sh <저널디렉토리>` | 500줄 초과 시 아카이브 이관, 최근 10턴 유지 | 미머지 `wo/*` 게이트로 merge=union 부활 원천 차단 (Gotcha 6) |
+| `templates/hooks/pre-commit` | 저널의 기존 줄 삭제·수정 차단 (append-only 강제) | 저장소 수준 훅 → 커밋하는 *모든* 에이전트에 적용 |
+
+`pre-commit` 훅은 문턱을 올릴 뿐 우회(`--no-verify`) 가능 — Gotcha 2의 "검증자 외부 상태 실측"을
+대체하지 않는다. 로테이션 스크립트가 정상적으로 `--no-verify` 커밋을 사용한다.
 
 ## Gotchas
 

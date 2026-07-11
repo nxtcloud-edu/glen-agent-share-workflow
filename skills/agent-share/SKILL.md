@@ -1,8 +1,8 @@
 ---
 name: agent-share
-description: "멀티 에이전트 협업 패턴 스킬. 문서 인계(agent-share 폴더)부터 명령서 채널·워처 핑·tmux 직접 제어·워크트리 브랜치 게이트까지 3단계 협업 모드 제공. Codex ↔ Claude ↔ Hermes 교차 검토, Planner-Coder 분업, 무인/반자동 핸드오프 표준화 시 사용 (특정 에이전트 순서 가정 안 함)."
+description: "멀티 에이전트 협업 패턴 스킬. 문서 인계(agent-share 폴더)부터 명령서 채널·워처 핑·tmux 직접 제어·워크트리 브랜치 게이트, 3자 이질 모델 상호 견제(MAGI)까지 4단계 협업 모드 제공. Codex ↔ Claude ↔ Hermes 교차 검토, Planner-Coder 분업, 무인/반자동 핸드오프 표준화 시 사용 (특정 에이전트 순서 가정 안 함)."
 user_invocable: true
-argument-hint: [topic-slug] [--role initiator|reviewer|followup] [--mode light|standard|full]
+argument-hint: [topic-slug] [--role initiator|reviewer|followup] [--mode light|standard|full|magi]
 ---
 
 # Agent Share
@@ -18,9 +18,11 @@ argument-hint: [topic-slug] [--role initiator|reviewer|followup] [--mode light|s
 | `light` | 문서 인계만 (아래 폴더/턴/리뷰 규칙) | 1회성 교차 검토, 짧은 인계 |
 | `standard` | + 저널 프로토콜 + 작업 명령서 채널 + 신뢰·검증 규칙 | 역할 분업이 지속되는 프로젝트 (Planner-Coder 등) |
 | `full` | + 워처 핑 + tmux 직접 제어 + 워크트리 브랜치 게이트 | 반자동/무인 핸드오프 루프 |
+| `magi` | + 3자 이질 모델 헌장(합의 게이트·stop-the-line·강점 라우팅) + lease/핑 스크립트 + 운영 스킬 SSOT | 이질적 3개 지능의 상호 견제가 필요한 장기 프로젝트 |
 
-`standard`/`full`의 상세는 문서 말미의 **운영 패턴 레이어** 참조. goods-bank 프로젝트에서
-WO-001~011 11사이클로 실증된 패턴이다 (Fable 5 계획·검증 ↔ Hermes gpt-5.5 코딩).
+`standard`/`full`의 상세는 문서 말미의 **운영 패턴 레이어**, `magi`의 상세는 **MAGI 레이어** 참조.
+goods-bank 프로젝트에서 WO-001~011 11사이클(standard/full), WO-012~045 + 헌장 v1.0(magi)으로 실증된
+패턴이다 (Fable 5 계획·검증 ↔ Hermes gpt-5.6 코딩 ↔ Codex gpt-5.6 반증·이미지).
 
 역할:
 
@@ -423,6 +425,32 @@ scripts/setup-worktree.sh <repo> <agent> --hooks-src templates/hooks --wo NNN --
 로테이션 스크립트가 정상적으로 `--no-verify` 커밋을 사용한다. **워크트리 게이트는 `core.hooksPath`를
 절대경로로 설정해야 한다** (상대경로는 링크된 워크트리에서 훅이 조용히 사라진다 — Gotcha 7).
 
+## MAGI 레이어 (`--mode magi`) — 3자 이질 모델 상호 견제
+
+full 모드의 위계(Planner→Coder→Verifier)에 **세 번째 이질 노드(독립 반증자)** 를 더해 단일 모델
+편향을 구조로 견제한다. 근거 실증: goods-bank WO-042에서 3번째 노드의 독립 리뷰가 검증자(Claude)가
+놓친 P0 2건을 적발. 전체 규범·실증은 goods-bank `.magi/MAGI.md`(헌장 v1.0)와 `.magi/skill/SKILL.md`
+(운영 스킬)이 원본이다.
+
+핵심 구성 (헌장 §7 요약):
+
+1. **강점 기반 라우팅**: 오케스트레이터·검증(장맥락 종합형) / 주 구현(명세→코드 완주형, stop-and-replan
+   권한) / 독립 반증·QA(가정 감사형, 반증·구현 모드 분리). 역할은 모델 강점으로 정하고 헌장에 기록.
+2. **위계 + 선별적 합의**: 일상은 위계로 빠르게, blast radius·되돌림 비용·권한 경계가 큰 변경만
+   3자 합의 게이트(decision packet + 노드별 approve/reject/abstain, 침묵 ≠ 동의).
+3. **stop-the-line**: P0·권한 우회·데이터 손실 근거의 구체적 반대 1표는 다수결로 못 덮는다.
+   표는 commit SHA에 귀속, 실질 diff 발생 시 재투표. 생성 노드는 자기 건 정족수 제외.
+4. **소통 2층 구조**: Git 문서가 SSOT, tmux 핑은 "문서를 읽으라"는 wake-up 신호만.
+5. **공유 자원 lease**: `git-common-dir` 아래 비추적 lock registry(원자적 mkdir, stale은 **시간 기준만**
+   — PID 생존 검사는 acquire 셸 종료 시 전 lease가 탈취되는 버그, 실측).
+6. **git 수거 대행**: 샌드박스 하네스(Codex CLI 등)는 워크트리여도 공용 `.git` 쓰기가 차단된다 —
+   해당 노드는 파일 작성만, git 조작은 오케스트레이터가 대행·수거.
+7. **운영 스킬 SSOT**: 스킬 본문은 중립 위치 한 곳(예: `.magi/skill/SKILL.md`)에 두고 각 하네스
+   스킬 경로(`.claude/skills/`·`.agents/skills/`)에서 symlink — 드리프트 원천 차단. 스킬 카탈로그는
+   대부분 세션 시작 시 스캔이므로 등록 후 새 세션부터 인식된다.
+8. **인간 오퍼레이터**: 프로덕션 실행 최종 권한은 사람. 이미지 등 시각 산출물은 마지막에 반드시
+   `open`으로 열어 사람이 직접 판정.
+
 ## Gotchas
 
 > **필수**: 오류 발생 시 우회 전에 여기 기록. (Gotcha-First)
@@ -438,3 +466,6 @@ scripts/setup-worktree.sh <repo> <agent> --hooks-src templates/hooks --wo NNN --
 9. **워처의 TURN_LOG grep 패턴은 완료 헤더 형식에 고정해야 한다** — `grep -q "hermes.*WO-NNN"` 처럼 느슨한 패턴은 플래너가 발행 턴에 적은 "Handoff: … WO-NNN" 문구와도 매치되어, 코더가 아직 작업 중(착수 커밋만 있고 완료 보고 전)인데 조기 완료로 오판한다(실측: WO-008). 완료 턴은 항상 `## <날짜> — <agent> (Coder) — WO-NNN` 헤더로 시작하므로 **헤더 라인만 추린 뒤 식별자를 매치**할 것 — `grep '^## ' TURN_LOG.md | grep -qF "<식별자>"`. 2단계로 하면 (1) 헤더 고정으로 조기 오탐을 막고 (2) `-F` 리터럴로 식별자의 괄호 등 정규식 메타문자(`(Coder)`)도 안전하다. Gotcha 1과 같은 계열 — "커밋 + TURN_LOG 기록" 복합 조건이라도 매치 패턴이 느슨하면 무력화된다. `watcher.sh` 가 이 방식을 쓴다. (2026-07-07)
 10. **워처의 커밋 판정 기준은 origin/main이 아니라 merge-base** — `tip != origin/main` 으로 "코더 신규 커밋"을 판정하면, 코더가 브랜치를 딴 뒤 플래너가 main을 전진시키는 순간(병렬 작업의 정상 패턴) 브랜치점 커밋을 신규로 오탐한다(실측: WO-023, 플래너 자신의 명령서 커밋을 신호로 오인). origin/main 기준으로 볼 땐 `tip != $(git merge-base <브랜치> origin/main)` 으로. `watcher.sh` 는 워크트리 HEAD 스냅샷(BASE)과 비교해 이 함정을 애초에 우회한다(코더 워크트리의 wo/NNN HEAD는 플래너의 main 전진에 영향받지 않으므로). (2026-07-06)
 11. **append-only 저널은 무한정 방치하면 안 된다** — `TURN_LOG.md` 는 매 턴 전문을 읽는 게시판이라, 회전 없이 누적하면 신규 에이전트의 턴 시작 컨텍스트 비용이 WO 사이클 수에 비례해 는다. git 성능은 문제가 아니다(수백KB~MB 무해) — 문제는 매 턴 읽기 비용과 리뷰 diff 노이즈. 임계값(파일 크기 또는 완료 WO 개수) 도달 시 오래된 구간을 아카이브로 스냅샷하고 활성 파일엔 최근 구간만 남기는 회전 정책을 **DECISIONS.md에 미리 명시**할 것 (vault류의 `PROGRESS.md`/`PROGRESS-archive.md` 분리 선례와 동일 문제). 이 레포는 `rotate-journal.sh`(500줄 임계 → `TURN_LOG-archive-<yyyymm>.md`, merge=union 게이트)로 구현 — 서술판의 `99_archive/`·완료-WO-개수 임계와는 네이밍·트리거만 다르다. (2026-07-07)
+12. **tmux 페인이 copy-mode에 들어가면 send-keys가 조용히 먹힌다** — `tmux send-keys`로 지시문을 보내도 화면에 아무 echo도 없고 상태바(경과 시간 등)도 전혀 갱신되지 않는 증상이 나타나면, 먼저 `tmux display-message -p -t <세션> '#{pane_in_mode} #{pane_mode} #{scroll_position}'`로 copy-mode 여부를 확인할 것 — `pane_in_mode=1`이면 모든 키 입력이 스크롤/검색 내비게이션으로 흡수되고 하위 프로그램(Hermes TUI 등)에는 전혀 전달되지 않는다(실측: WO-009 착수 지시 2회 연속 무반응, `echo` 프로브까지 무반응 확인 후 진단). 무반응이 1~2회 이상 반복되면 같은 send-keys를 더 재시도하지 말고 즉시 모드부터 확인할 것. 복구: `tmux send-keys -t <세션> -X cancel`(copy-mode 종료) 후 재전송. `capture-pane -S <N>`으로 스크롤백을 조회하는 습관 자체가 실수로 copy-mode를 유발하지는 않지만, 마우스 스크롤·다른 키바인딩으로 우발적으로 들어갈 수 있으므로 "무반응 = 먼저 모드 확인"을 표준 절차로 삼는다. (2026-07-07)
+13. **워처는 커밋된 TURN_LOG를 봐야 한다 — 워킹트리 파일을 직접 grep하면 또 조기 오탐한다** — Gotcha 9로 헤더 매칭까지 고정해도, `grep`을 워킹트리의 `.agent/TURN_LOG.md`에 직접 걸면 코더가 파일을 디스크에 써놓고 아직 `git commit`하지 않은 초안 상태를 완료로 오판한다(실측: WO-009 — 착수 커밋만 있는 HEAD에서 워킹트리 TURN_LOG에 완료 헤더가 이미 쓰여 있었고, 그 순간 tmux를 보니 코더가 여전히 `git commit -m "feat: ..."`을 실행하는 중이었다). D4의 "새 커밋 + TURN_LOG 기록" 복합 조건은 *같은 커밋 안에* 둘 다 있어야 한다는 뜻 — 워처는 파일시스템이 아니라 `git show HEAD:.agent/TURN_LOG.md`(또는 `git log -1 --format=%H -- .agent/TURN_LOG.md`가 BASE에서 전진했는지)로 커밋된 스냅샷을 검사할 것. Gotcha 1·9와 한 계열: "복합 조건"의 각 항이 정말 같은 커밋을 가리키는지 매번 재확인해야 한다. (2026-07-07)
+8. **E2E webServer 포트 3111 충돌 = 검증 반복 실패의 정체** — playwright.config가 `reuseExistingServer:false` + 고정 포트 3111 + `pnpm build && pnpm start --port 3111`. 3111이 앞 검증의 `next start` 잔여로 점유돼 있으면 **재사용 없이 에러로 죽어** E2E가 아예 실행 전 실패한다(테스트 실패 아님 — 실행 차단). 여러 워크트리 검증이 같은 포트를 공유해 잔여가 겹칠 때 발생. 증상: full-gate 체인에서 E2E 결과 줄이 비어 "잘린 것처럼" 보임. 즉효책: E2E 전 `lsof -ti:3111 | xargs kill -9 2>/dev/null` 선행. 근본책: webServer command가 시작 전 포트를 비우도록(래퍼 스크립트) 하거나 유니크 포트 사용. (2026-07-07)

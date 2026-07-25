@@ -67,12 +67,27 @@ lock은 `git-common-dir/magi-locks/` — 모든 워크트리가 같은 잠금을
 빈 터미널에서 3노드를 한 번에 띄우고 통합 뷰어에 붙는다. 배치 시 스크립트 상단 `NODES` 표(세션·워크트리·기동 명령)를 채운다.
 
 ```bash
-scripts/magi-up.sh --attach            # 터미널 진입점 — alias로 걸어두면 한 단어가 된다
+scripts/magi-up.sh --attach            # 터미널 진입점
 scripts/magi-up.sh --status            # 기동 없이 상태만
 scripts/magi-up.sh <노드> --restart    # 특정 노드 재기동
 ```
 
+**진입점은 alias가 아니라 셸 함수로 건다.** alias는 경로가 한 프로젝트에 못 박혀, 어느 폴더에서 치든 같은 프로젝트만 띄운다. 아래 함수는 cwd의 저장소를 찾아 **그 프로젝트의** 스크립트를 실행한다 — 코더 워크트리에서 실행해도 공용 `.git`을 통해 main 워크트리의 스크립트를 찾는다:
+
+```bash
+magi() {
+  local wt common script
+  wt=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "git 저장소가 아니다" >&2; return 1; }
+  common=$(cd "$wt" && git rev-parse --git-common-dir)
+  case "$common" in /*) ;; *) common="$wt/$common";; esac
+  script="$(dirname "$common")/.magi/scripts/magi-up.sh"
+  [ -x "$script" ] || { echo "이 프로젝트에 MAGI 미배치: $script" >&2; return 1; }
+  "$script" --attach "$@"
+}
+```
+
 - **세션명은 계약이다** — `ping.sh`의 send-keys 타겟과 같아야 한다. 바꾸면 핑이 조용히 깨진다.
+- **세션명에 프로젝트 접두를 붙여라** — tmux 세션은 머신 전역이다. 두 프로젝트가 `magi`·`claude` 같은 공용 이름을 쓰면 두 번째 프로젝트의 기동이 첫 번째의 세션을 "이미 실행 중"으로 오인해 붙잡는다. 뷰어 세션도 예외가 아니다(`<proj>-magi`).
 - 뷰어 세션에 각 노드 윈도우를 `link-window`로 건다 → 어태치 한 번으로 `prefix+1/2/3` 전환. 원본 세션은 그대로 살아 있어 핑 타겟도 유지된다.
 - **tmux 안에서 실행되면 현재 세션을 카스파 슬롯으로 인계**한다(이름이 다르면 rename). 오케스트레이터 인스턴스 중복을 막는 장치 — 표준 흐름은 "터미널에서 오케스트레이터 CLI를 tmux로 열고 → 그 안에서 기동 명령". 슬래시 명령어를 지원하는 하네스면 얇은 래퍼를 두어 세션 안에서도 부르게 하라.
 - 디렉토리 신뢰 프롬프트는 자동 승인하되 **커서가 `1. Yes`에 있을 때만** 누른다(`--no-trust`로 해제). 커서 확인 없이 Enter를 보내면 `2. No, quit`을 눌러 노드를 꺼뜨린다. **명령 실행 승인 프롬프트는 대상이 아니다** — 그건 권한 경계다.

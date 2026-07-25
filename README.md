@@ -40,7 +40,7 @@
 | 워크트리 브랜치 게이트 | wo/NNN 격리, 코더 main커밋·push 훅 차단, 저널 merge=union | `scripts/setup-worktree.sh` + `templates/hooks/` |
 | 스크립트(기계적 강제) | 폴더·턴 스캐폴딩, 저널 로테이션·대조, 게이트 훅 | `skills/agent-share/scripts/` + `templates/hooks/` |
 | **MAGI 3자 체제** (`--mode magi`) | 이질적 3모델 상호 견제 — 합의 게이트·stop-the-line·lease·git 수거. 2026-07-11 goods-bank 헌장 v1.0(3자 전원 동의)으로 실증 | `skills/magi/` (SKILL + lease.sh·ping.sh·magi-up.sh + MD-000 템플릿) |
-| MAGI 세션 기동 | 빈 터미널 → 3노드 tmux 기동 + 통합 뷰어 attach를 한 번에. 신뢰 프롬프트 자동 승인(디렉토리 신뢰만), 오케스트레이터 세션 인계로 인스턴스 중복 방지 | `skills/magi/scripts/magi-up.sh` + 스킬 §6 |
+| MAGI 세션 기동 | 프로젝트 폴더에서 한 단어 → 그 프로젝트의 3노드 tmux 기동 + 오케스트레이터 세션 attach. 세션명은 경로에서 자동 생성(프로젝트 간 충돌 없음), 신뢰 프롬프트 자동 승인(디렉토리 신뢰만) | `skills/magi/scripts/magi-up.sh` + 스킬 §6 |
 
 ## 도입 순서
 

@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# MAGI 진입점 — 어느 프로젝트 폴더에서든 `magi` 한 단어.
+#
+#   magi              현재 프로젝트의 3노드를 띄우고 카스파 세션에 붙는다
+#   magi init         워크트리·저널 셋업만 (기동 안 함)
+#   magi status       기동 없이 상태만
+#   magi ping <노드> <메시지>
+#   magi <그 외>      magi-up.sh에 그대로 전달 (--restart, hermes 등)
+#
+# 미설정 프로젝트에서는 무엇을 만들지 보여주고 y/N를 받는다 — 워크트리 생성은 되돌리기
+# 번거로우므로 한 번 짚고 간다.
+set -euo pipefail
+
+MAGI_HOME="$(cd "$(dirname "$0")/.." && pwd)"
+. "$MAGI_HOME/scripts/lib.sh"
+
+PROJ_ROOT=$(magi_project_root) || {
+  echo "❌ git 저장소가 아니다 — 프로젝트 폴더에서 실행하라" >&2; exit 1
+}
+PROJ=$(basename "$PROJ_ROOT")
+WT_PARENT=$(dirname "$PROJ_ROOT")
+
+# ── 셋업 상태 점검 ──────────────────────────────────────────────
+missing_worktrees() {
+  local line key wt
+  magi_nodes "$PROJ_ROOT" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=$(magi_field "$line" 1); wt=$(magi_field "$line" 2)
+    [ "$key" = "claude" ] && continue      # 카스파는 main 워크트리 = 항상 존재
+    [ -d "$wt" ] || echo "$key|$wt"
+  done
+}
+
+needs_journal() { [ ! -f "$PROJ_ROOT/.magi/CURRENT_STATE.md" ]; }
+
+do_init() {
+  local missing line key wt branch
+  missing=$(missing_worktrees)
+
+  if [ -z "$missing" ] && ! needs_journal; then
+    echo "✅ $PROJ: MAGI 이미 설정됨"
+    return 0
+  fi
+
+  echo "⚙️  $PROJ: MAGI 미설정. 다음을 생성한다:"
+  echo "$missing" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=$(magi_field "$line" 1); wt=$(magi_field "$line" 2)
+    case "$key" in
+      hermes) branch="wo/000-standby";;
+      codex)  branch="review/000-standby";;
+      *)      branch="magi/$key-standby";;
+    esac
+    echo "  + 워크트리 $wt  ($branch)"
+  done
+  needs_journal && echo "  + 저널 $PROJ_ROOT/.magi/  (CURRENT_STATE·HANDOFF·TURN_LOG·work-orders)"
+  echo
+  printf "진행할까요? [y/N] "
+  read -r ans
+  case "$ans" in [yY]*) ;; *) echo "취소했다."; return 1;; esac
+
+  echo "$missing" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=$(magi_field "$line" 1); wt=$(magi_field "$line" 2)
+    case "$key" in
+      hermes) branch="wo/000-standby";;
+      codex)  branch="review/000-standby";;
+      *)      branch="magi/$key-standby";;
+    esac
+    git -C "$PROJ_ROOT" worktree add "$wt" -b "$branch" >/dev/null 2>&1 \
+      || git -C "$PROJ_ROOT" worktree add "$wt" "$branch" >/dev/null
+    # 코더 워크트리 마커 — 훅이 main 직접 커밋·push를 막을 때 참조한다
+    : > "$wt/.agent-coder-guard"
+    echo "  ✅ $wt ($branch)"
+  done
+
+  if needs_journal; then
+    mkdir -p "$PROJ_ROOT/.magi/work-orders" "$PROJ_ROOT/.magi/decisions"
+    for f in CURRENT_STATE.md HANDOFF.md TURN_LOG.md DECISIONS.md; do
+      [ -f "$MAGI_HOME/templates/$f" ] && sed "s/{{PROJECT}}/$PROJ/g" \
+        "$MAGI_HOME/templates/$f" > "$PROJ_ROOT/.magi/$f"
+    done
+    [ -f "$MAGI_HOME/templates/decisions/MD-000-template.md" ] && \
+      cp "$MAGI_HOME/templates/decisions/MD-000-template.md" "$PROJ_ROOT/.magi/decisions/"
+    echo "  ✅ 저널 $PROJ_ROOT/.magi/"
+    echo "     ※ 저널은 프로젝트 저장소에 커밋한다 — Git이 SSOT다 (tmux는 wake-up 신호만)"
+  fi
+}
+
+# ── 디스패치 ────────────────────────────────────────────────────
+case "${1:-}" in
+  init)   shift; do_init; exit $?;;
+  status) shift; exec "$MAGI_HOME/scripts/magi-up.sh" --status "$@";;
+  ping)   shift; exec "$MAGI_HOME/scripts/ping.sh" "$@";;
+  lease)  shift; exec "$MAGI_HOME/scripts/lease.sh" "$@";;
+  help|-h|--help) exec "$MAGI_HOME/scripts/magi-up.sh" --help;;
+esac
+
+# 기동 경로 — 미설정이면 먼저 셋업을 제안한다
+if [ -n "$(missing_worktrees)" ] || needs_journal; then
+  do_init || exit 1
+  echo
+fi
+
+exec "$MAGI_HOME/scripts/magi-up.sh" --attach "$@"

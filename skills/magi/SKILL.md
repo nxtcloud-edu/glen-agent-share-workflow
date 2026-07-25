@@ -5,11 +5,16 @@ description: MAGI 3자 협업 시스템 운영 스킬 (일반화판) — 이질�
 
 # MAGI 운영 스킬 (일반화판)
 
-> **원본 실증**: goods-bank 프로젝트 `.magi/MAGI.md`(헌장 v1.0, 3자 전원 동의) + `.magi/skill/SKILL.md`.
-> 이 일반화판은 프로젝트 특화값(노드 모델·워크트리·tmux 세션명)을 `<>` 자리로 비워뒀다 —
-> 배치 시 채우고, **중립 위치 한 곳을 SSOT로 두고 각 하네스 스킬 경로에 symlink**한다
-> (예: `.magi/skill/` ← `.claude/skills/magi`·`.agents/skills/magi`). 스킬 카탈로그는 대부분
-> 세션 시작 시 스캔 — 등록 후 새 세션부터 인식된다.
+> **원본 실증**: goods-bank(헌장 v1.0, 3자 전원 동의) + edu-workflow(글로벌화 2026-07-25).
+>
+> **설치는 머신당 한 번이다.** `skills/magi/`를 `~/.magi/`로 복사하고, `~/.magi/bin`을 PATH에
+> 추가한 뒤, 각 하네스의 **글로벌** 스킬 경로에서 `~/.magi/skill`로 symlink한다
+> (`~/.claude/skills/magi` · `~/.hermes/skills/magi` · `$CODEX_HOME/skills/magi`).
+> 프로젝트마다 사본을 두지 마라 — 드리프트한다(Gotcha 7). 스킬 카탈로그는 대부분 세션 시작
+> 시 스캔되므로 등록 후 새 세션부터 인식된다.
+>
+> 프로젝트 특화값(노드 모델·역할 배치)은 그 프로젝트 저장소의 저널·`PROJECT.md`에 둔다.
+> 아래 §0 표는 배치 시 프로젝트 문서로 옮겨 채우는 틀이다.
 
 ## 0. 노드 자기 식별 (배치 시 채움)
 
@@ -33,7 +38,7 @@ description: MAGI 3자 협업 시스템 운영 스킬 (일반화판) — 이질�
 **결정·명령·승인은 Git 문서 먼저, tmux는 wake-up 신호만.**
 
 ```bash
-scripts/ping.sh <세션> "<읽을 문서 ID + 요지>"   # 선검사(브랜치·SHA) 후 전송 — 세션→워크트리 매핑은 스크립트 상단 case문에 채움
+magi ping <노드> "<읽을 문서 ID + 요지>"   # 선검사(브랜치·SHA) 후 전송. 노드=claude|hermes|codex
 ```
 
 응답 감시는 **산출 파일 존재가 아니라 대상 pane의 턴 종료 마커**로 (Gotcha 3).
@@ -41,9 +46,9 @@ scripts/ping.sh <세션> "<읽을 문서 ID + 요지>"   # 선검사(브랜치·
 ## 3. 공유 자원 lease
 
 ```bash
-scripts/lease.sh acquire <자원> <노드명> [작업ID]   # 로컬 DB·테스트 포트·main 등 사용 전
-scripts/lease.sh release <자원> <노드명>
-scripts/lease.sh status                             # stale(4h) 표시
+magi lease acquire <자원> <노드명> [작업ID]   # 로컬 DB·테스트 포트·main 등 사용 전
+magi lease release <자원> <노드명>
+magi lease status                             # stale(4h) 표시
 ```
 
 lock은 `git-common-dir/magi-locks/` — 모든 워크트리가 같은 잠금을 본다.
@@ -62,32 +67,36 @@ lock은 `git-common-dir/magi-locks/` — 모든 워크트리가 같은 잠금을
 3. **stop-the-line**: P0·권한 우회·데이터 손실 근거 반대 1표면 다수결로 못 덮음.
 4. break-glass(긴급 차단·rollback): 실행자 1 + 독립 확인자 1 + 사람 승인 → 사후 3자 검토 의무.
 
-## 6. 세션 기동 (`scripts/magi-up.sh`)
+## 6. 세션 기동 (`magi`)
 
-빈 터미널에서 3노드를 한 번에 띄우고 카스파 세션에 붙는다. 배치 시 스크립트 상단 `NODES` 표(워크트리·기동 명령)를 채운다 — 세션명은 채우지 않는다(자동 생성).
+**MAGI는 프로젝트마다 설치하지 않는다.** 도구는 `~/.magi/`에 한 벌 두고, 프로젝트에는 저널만 남긴다 — 스크립트 사본이 늘면 드리프트가 시작되고, 새 프로젝트마다 복사·수정하는 비용이 붙는다.
 
-```bash
-scripts/magi-up.sh --attach            # 터미널 진입점
-scripts/magi-up.sh --status            # 기동 없이 상태만
-scripts/magi-up.sh <노드> --restart    # 특정 노드 재기동
+```
+~/.magi/                 ← 글로벌 한 벌 (PATH에 bin/ 추가)
+  bin/magi               진입점
+  scripts/lib.sh         프로젝트 식별·세션명 규칙의 단일 정의처
+  scripts/{magi-up,ping,lease}.sh
+  skill/SKILL.md         이 파일 — 각 하네스 스킬 경로에 symlink
+  templates/             저널 스캐폴딩
+
+<프로젝트>/.magi/         ← 저널만 (Git이 SSOT)
+  CURRENT_STATE.md · HANDOFF.md · TURN_LOG.md · work-orders/ · decisions/
+  nodes.conf             (선택) 기동 명령이 기본과 다를 때만
 ```
 
-**진입점은 alias가 아니라 셸 함수로 건다.** alias는 경로가 한 프로젝트에 못 박혀, 어느 폴더에서 치든 같은 프로젝트만 띄운다. 아래 함수는 cwd의 저장소를 찾아 **그 프로젝트의** 스크립트를 실행한다 — 코더 워크트리에서 실행해도 공용 `.git`을 통해 main 워크트리의 스크립트를 찾는다:
-
 ```bash
-magi() {
-  local wt common script
-  wt=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "git 저장소가 아니다" >&2; return 1; }
-  common=$(cd "$wt" && git rev-parse --git-common-dir)
-  case "$common" in /*) ;; *) common="$wt/$common";; esac
-  script="$(dirname "$common")/.magi/scripts/magi-up.sh"
-  [ -x "$script" ] || { echo "이 프로젝트에 MAGI 미배치: $script" >&2; return 1; }
-  "$script" --attach "$@"
-}
+magi                  # cwd 프로젝트의 3노드 기동 + 카스파 세션 attach
+magi status           # 기동 없이 상태만
+magi init             # 워크트리·저널 셋업만
+magi hermes --restart # 특정 노드 재기동
+magi ping <노드> "<메시지>"
 ```
 
+- **어느 프로젝트 폴더에서 쳐도 그 프로젝트가 뜬다** — cwd의 저장소를 찾아 프로젝트를 식별한다(코더 워크트리에서 쳐도 공용 `.git`으로 main 워크트리를 역산). 진입점을 **alias로 걸지 마라**: 경로가 한 프로젝트에 못 박혀 어디서 치든 같은 것만 뜬다.
+- **미설정 프로젝트에서는 무엇을 만들지 보여주고 y/N를 받는다** — 워크트리 생성은 되돌리기 번거로우니 한 번 짚고 간다. 이후 실행부터는 바로 기동한다.
+- **기동 명령이 프로젝트마다 다르면 `.magi/nodes.conf`만 둔다**(예: 반증 노드의 전용 샌드박스 프로필). 없으면 글로벌 기본 관례(`<proj>-hermes`·`<proj>-codex-cli` 워크트리)를 쓴다. **세션명은 여기서 정하지 않는다** — 자동 생성이다.
 - **세션명은 main 워크트리 폴더명에서 자동 생성**한다(`<proj>-claude`·`<proj>-hermes`·`<proj>-codex`). tmux 세션 공간은 머신 전역이라, 공용 이름(`magi`·`claude`)을 쓰면 두 번째 프로젝트의 기동이 첫 번째의 세션을 "이미 실행 중"으로 오인해 붙잡는다. **접두를 손으로 정하지도 마라** — 프로젝트가 늘 때마다 같은 실수를 반복한다. 경로에서 뽑으면 충돌이 구조적으로 사라진다.
-- **`ping.sh`가 같은 규칙으로 세션명을 계산한다** — 세션명은 두 스크립트 사이의 계약이다. 한쪽만 고치면 역핑이 조용히 끊긴다.
+- **세션명 규칙은 `lib.sh` 한 곳에만 있다** — 기동과 핑이 둘 다 이 파일을 source한다. 과거 각자 하드코딩하던 시절 한쪽만 고쳐 역핑이 조용히 끊긴 적이 있다.
 - 세션 이동은 tmux 기본 기능으로 한다 — `prefix+s`(세션 목록)·`prefix+(`/`prefix+)`(이전·다음). **별도 뷰어 세션을 두지 마라**: `link-window`로 미러 세션을 만들면 세션이 하나 더 늘고 rename·정리 대상이 되는데, `prefix+s`가 같은 일을 공짜로 한다.
 - **tmux 안에서 실행되면 현재 세션을 카스파 슬롯으로 인계**한다(이름이 다르면 rename). 오케스트레이터 인스턴스 중복을 막는 장치 — 표준 흐름은 "터미널에서 오케스트레이터 CLI를 tmux로 열고 → 그 안에서 기동 명령". 슬래시 명령어를 지원하는 하네스면 얇은 래퍼를 두어 세션 안에서도 부르게 하라.
 - 디렉토리 신뢰 프롬프트는 자동 승인하되 **커서가 `1. Yes`에 있을 때만** 누른다(`--no-trust`로 해제). 커서 확인 없이 Enter를 보내면 `2. No, quit`을 눌러 노드를 꺼뜨린다. **명령 실행 승인 프롬프트는 대상이 아니다** — 그건 권한 경계다.

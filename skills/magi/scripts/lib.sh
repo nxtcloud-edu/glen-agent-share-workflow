@@ -33,8 +33,8 @@ magi_nodes() {
         -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$conf"
   else
     cat <<EOF
-claude|$root|카스파|claude
-hermes|$parent/$proj-hermes|멜기오르|hermes chat
+claude|$root|캐스퍼|claude
+hermes|$parent/$proj-hermes|메르키오르|hermes chat
 codex|$parent/$proj-codex-cli|발타자르|codex -a never -s workspace-write
 EOF
   fi

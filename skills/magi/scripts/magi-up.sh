@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MAGI 3노드 tmux 기동 — 글로벌 도구 (~/.magi/scripts/magi-up.sh)
 #
-# cwd의 저장소를 찾아 그 프로젝트의 카스파·멜기오르·발타자르 세션을 띄운다.
+# cwd의 저장소를 찾아 그 프로젝트의 캐스퍼·메르키오르·발타자르 세션을 띄운다.
 # 세션 간 이동은 tmux 기본 기능(`prefix+s`)으로 — 별도 뷰어 세션을 두지 않는다.
 #
 # 세션명은 main 워크트리 폴더명에서 자동 생성된다 (<프로젝트>-<노드>). 규칙 정의는 lib.sh —
@@ -28,7 +28,7 @@ usage() {
   노드      claude | hermes | codex   (생략 시 3노드 전부)
   --restart 이미 떠 있는 세션을 죽이고 다시 띄운다
   --status  기동하지 않고 현재 세션 상태만 출력
-  --attach  기동을 마치면 카스파 세션에 붙는다 (터미널 진입점 기본값)
+  --attach  기동을 마치면 캐스퍼 세션에 붙는다 (터미널 진입점 기본값)
   --no-trust 디렉토리 신뢰 프롬프트 자동 승인을 끈다
 
 세션: $(magi_session "$PROJ" claude) / $(magi_session "$PROJ" hermes) / $(magi_session "$PROJ" codex)
@@ -54,7 +54,7 @@ done
 
 wants() { case " $TARGETS " in *" $1 "*) return 0;; *) return 1;; esac; }
 
-# tmux 안에서 실행됐는지 — 그렇다면 현재 세션을 카스파 슬롯으로 인계한다
+# tmux 안에서 실행됐는지 — 그렇다면 현재 세션을 캐스퍼 슬롯으로 인계한다
 SELF_SESSION=""
 if [ -n "${TMUX:-}" ]; then
   SELF_SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
@@ -122,10 +122,10 @@ while IFS= read -r LINE; do
     continue
   fi
 
-  # 카스파 슬롯 인계 — tmux 안에서 돌고 있다면 그 세션이 곧 카스파다 (인스턴스 중복 방지)
+  # 캐스퍼 슬롯 인계 — tmux 안에서 돌고 있다면 그 세션이 곧 캐스퍼다 (인스턴스 중복 방지)
   if [ "$KEY" = "claude" ] && [ -n "$SELF_SESSION" ] && [ "$RESTART" != "1" ]; then
     if [ "$SELF_SESSION" = "$SESSION" ]; then
-      echo "🏠 $KOR: 현재 세션($SESSION)이 카스파 — 그대로 사용"; continue
+      echo "🏠 $KOR: 현재 세션($SESSION)이 캐스퍼 — 그대로 사용"; continue
     elif tmux has-session -t "$SESSION" 2>/dev/null; then
       echo "⚠️  $KOR: 현재 세션은 '$SELF_SESSION'인데 별도 '$SESSION'가 이미 떠 있다 (중복)."
       echo "     역핑 타겟은 '$SESSION' 하나뿐 — 현재 세션을 쓰려면: tmux kill-session -t $SESSION"
@@ -199,7 +199,7 @@ echo
 [ -n "$BLOCKED" ] && echo "⏸️  승인 대기:$BLOCKED — 응답 전까지 이 노드는 핑을 처리하지 못한다"
 echo "이동: prefix+s (세션 목록) · prefix+( ) (이전·다음) · prefix+d (detach, 노드는 계속 살아있다)"
 
-# ── 5. 카스파 세션에 붙기 ───────────────────────────────────────
+# ── 5. 캐스퍼 세션에 붙기 ───────────────────────────────────────
 if [ "$ATTACH" = "1" ]; then
   CASPAR=$(magi_session "$PROJ" claude)
   if tmux has-session -t "$CASPAR" 2>/dev/null; then

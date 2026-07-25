@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MAGI 진입점 — 어느 프로젝트 폴더에서든 `magi` 한 단어.
 #
-#   magi              현재 프로젝트의 3노드를 띄우고 카스파 세션에 붙는다
+#   magi              현재 프로젝트의 3노드를 띄우고 캐스퍼 세션에 붙는다
 #   magi init         워크트리·저널 셋업만 (기동 안 함)
 #   magi status       기동 없이 상태만
 #   magi ping <노드> <메시지>
@@ -26,7 +26,7 @@ missing_worktrees() {
   magi_nodes "$PROJ_ROOT" | while IFS= read -r line; do
     [ -n "$line" ] || continue
     key=$(magi_field "$line" 1); wt=$(magi_field "$line" 2)
-    [ "$key" = "claude" ] && continue      # 카스파는 main 워크트리 = 항상 존재
+    [ "$key" = "claude" ] && continue      # 캐스퍼는 main 워크트리 = 항상 존재
     [ -d "$wt" ] || echo "$key|$wt"
   done
 }

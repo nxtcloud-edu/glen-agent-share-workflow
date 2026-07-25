@@ -62,9 +62,25 @@ lock은 `git-common-dir/magi-locks/` — 모든 워크트리가 같은 잠금을
 3. **stop-the-line**: P0·권한 우회·데이터 손실 근거 반대 1표면 다수결로 못 덮음.
 4. break-glass(긴급 차단·rollback): 실행자 1 + 독립 확인자 1 + 사람 승인 → 사후 3자 검토 의무.
 
-## Gotchas (goods-bank 실측, 2026-07-11~12)
+## 6. 세션 기동 (`scripts/magi-up.sh`)
 
-1. **샌드박스 git 쓰기 차단 → 해소 가능**: workspace-write류 샌드박스는 워크트리여도 공용 `.git`(git-common-dir) 쓰기 불가 — 읽기는 됨. **해소**: 하네스의 샌드박스 설정에서 공용 `.git` 경로를 writable roots에 추가 + 세션 재기동 (Codex CLI는 `<프로필명>.config.toml` 별도 파일이 정식 — config.toml 내 프로필 테이블은 legacy 거부). 해소 전까지는 git 쓰기를 지시하지 말고 파일만 시켜라.
+빈 터미널에서 3노드를 한 번에 띄우고 통합 뷰어에 붙는다. 배치 시 스크립트 상단 `NODES` 표(세션·워크트리·기동 명령)를 채운다.
+
+```bash
+scripts/magi-up.sh --attach            # 터미널 진입점 — alias로 걸어두면 한 단어가 된다
+scripts/magi-up.sh --status            # 기동 없이 상태만
+scripts/magi-up.sh <노드> --restart    # 특정 노드 재기동
+```
+
+- **세션명은 계약이다** — `ping.sh`의 send-keys 타겟과 같아야 한다. 바꾸면 핑이 조용히 깨진다.
+- 뷰어 세션에 각 노드 윈도우를 `link-window`로 건다 → 어태치 한 번으로 `prefix+1/2/3` 전환. 원본 세션은 그대로 살아 있어 핑 타겟도 유지된다.
+- **tmux 안에서 실행되면 현재 세션을 카스파 슬롯으로 인계**한다(이름이 다르면 rename). 오케스트레이터 인스턴스 중복을 막는 장치 — 표준 흐름은 "터미널에서 오케스트레이터 CLI를 tmux로 열고 → 그 안에서 기동 명령". 슬래시 명령어를 지원하는 하네스면 얇은 래퍼를 두어 세션 안에서도 부르게 하라.
+- 디렉토리 신뢰 프롬프트는 자동 승인하되 **커서가 `1. Yes`에 있을 때만** 누른다(`--no-trust`로 해제). 커서 확인 없이 Enter를 보내면 `2. No, quit`을 눌러 노드를 꺼뜨린다. **명령 실행 승인 프롬프트는 대상이 아니다** — 그건 권한 경계다.
+- `remain-on-exit`를 켜지 않는다 — `has-session == 노드 생존`을 지켜야 `ping.sh` 선검사가 빈 셸을 살아있다고 오판하지 않는다.
+
+## Gotchas (goods-bank 실측 2026-07-11~12 + edu-workflow 실측 2026-07-25)
+
+1. **샌드박스 git 쓰기 차단 → 해소 가능**: workspace-write류 샌드박스는 워크트리여도 공용 `.git`(git-common-dir) 쓰기 불가 — 읽기는 됨. **해소**: 하네스의 샌드박스 설정에서 공용 `.git` 경로를 writable roots에 추가 + 세션 재기동 (Codex CLI는 `<프로필명>.config.toml` 별도 파일이 정식 — config.toml 내 프로필 테이블은 legacy 거부). 해소 전까지는 git 쓰기를 지시하지 말고 파일만 시켜라. **해소 확인은 실측으로** — 빈 커밋 왕복(`git commit --allow-empty` → `git reset --soft HEAD~1`)이 워킹트리를 건드리지 않으면서 쓰기 권한만 검증한다. 설정을 고쳤어도 프로필 자체가 로드되지 않을 수 있다 (Gotcha 11).
 2. **lease는 작업 수명**: stale 판정에 PID 생존 검사를 쓰면 acquire한 셸 종료 즉시 전 lease 탈취 가능 — 시간 기준만.
 3. **완료 감시는 pane 마커로**: 산출 파일 존재 기준은 노드가 차단·중단되면 영원히 대기. 노드별 독립 감시, AND 조건 금지.
 4. **tmux 프롬프트 오인**: 에이전트 CLI 프롬프트는 셸과 똑같이 생길 수 있다 — send-keys 전에 상태줄로 CLI 여부 확인. 확인용 셸 명령이 에이전트 메시지로 들어간다.
@@ -74,6 +90,9 @@ lock은 `git-common-dir/magi-locks/` — 모든 워크트리가 같은 잠금을
 8. **샌드박스 tmux 소켓 차단 → 설정 조합으로 해소** (역방향 핑 필요 시): 네트워크 차단형 샌드박스는 tmux Unix 소켓 connect도 거부한다. 해소는 **부여 스위치 + 프록시 allowlist 둘 다** 필요 — ① 샌드박스 네트워크 허용(예: Codex `sandbox_workspace_write.network_access = true`) ② 프록시 기능에 tmux 소켓 경로 allowlist. ②만으로는 아무것도 안 열린다(프록시는 제한 레이어지 부여가 아님). **추가 함정**: full 모드여도 HTTPS CONNECT는 도메인 allowlist 미설정 시 403 — `git fetch`가 죽는다(문서에 없음, 소스 테스트로 실증). 설정은 기동 시 로드 — 변경 후 재기동 필수.
 9. **샌드박스 symlink 생성 차단은 재기동 먼저**: 장수 세션에서 rebase 중 `unable to create symlink ... Operation not permitted`가 나면 동일 설정·동일 바이너리라도 **세션 재기동 후 해소**되는 사례 실측(낡은 sandbox 정책 추정). 재기동으로 안 풀리면 오케스트레이터가 대행.
 10. **TUI 설정 메뉴가 프로필 설정을 클로버링**: 프로필 세션에서 실험 기능 메뉴 저장(취소 포함)이 features 테이블을 bool 플래그로 재작성해 소켓 allowlist 등 세부 설정이 유실될 수 있다. 메뉴 사용 후 프로필 파일 복원 확인 필수.
+11. **CLI 프로필은 그 CLI가 보는 HOME에서 찾는다 — 계정 래퍼가 HOME을 바꾸면 프로필이 조용히 무시된다**: Codex CLI는 `--profile <name>`을 `$CODEX_HOME/<name>.config.toml`에서 찾는다. 계정 관리 래퍼가 `CODEX_HOME`을 자기 경로로 오버라이드하면, 사용자가 `~/.codex/`에 공들여 쓴 프로필이 **한 번도 로드되지 않는다**. 실측: 반증 노드가 base config 모델로, 공용 `.git` 쓰기 권한 없이 돌고 있었다(Gotcha 1이 해소된 줄 알았으나 재발). **판정법**: pane 상태줄의 모델명이 프로필 `model` 값과 다르면 미적용 — 조용히 실패하므로 이 대조가 유일한 신호다. `ls "$CODEX_HOME"/*.config.toml`로 정본 위치를 확정하고, 로드되지 않는 쪽에는 정본을 가리키는 경고 주석을 남겨라. **주의**: CLI가 신뢰 승인을 `[projects.*]`로 파일 끝에 자동 append하므로 **top-level 키는 반드시 테이블보다 위**에 둔다. base에 이미 있는 테이블(`[features]` 등)은 프로필에 중복 정의하지 마라 — Gotcha 10의 사고 표면만 넓어진다.
+12. **tmux pane 상태 판정에 스크롤백(`capture-pane -S`)을 쓰지 마라**: 이미 응답해 지나간 프롬프트가 히스토리에 남아 "아직 대기 중"으로 오인된다 (실측: 신뢰 프롬프트 자동 승인이 성공했는데 `-S -20` 탓에 실패로 보고). 판정은 `capture-pane -p -t <세션>`(visible only)으로. `-S`는 사람이 읽을 로그를 뜰 때만.
+13. **이질성은 모델 배치로 지킨다**: 반증 노드와 구현 노드에 같은 모델을 꽂으면 교차검증의 근거가 사라진다. 프로필을 복사해 쓸 때 `model` 값이 다른 노드 것 그대로 남아 있는지 확인하라 (실측: 반증 노드 프로필에 구현 노드 모델이 박혀 있었다 — 헌장 표기와 대조해 발견).
 
 ## 합의 게이트 운용 교훈 (실전 2사이클 — MD-001·002)
 

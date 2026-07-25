@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # MAGI 진입점 — 어느 프로젝트 폴더에서든 `magi` 한 단어.
 #
-#   magi              현재 프로젝트의 3노드를 띄우고 캐스퍼 세션에 붙는다
+#   magi              현재 프로젝트의 3노드를 띄우고, 워처를 붙인 뒤 캐스퍼 세션에 붙는다
 #   magi init         워크트리·저널 셋업만 (기동 안 함)
-#   magi status       기동 없이 상태만
+#   magi status       기동 없이 상태만 (워처 상태 포함)
+#   magi watch …      워처 start|stop|status
 #   magi ping <노드> <메시지>
 #   magi <그 외>      magi-up.sh에 그대로 전달 (--restart, hermes 등)
+#
+# 워처는 기동과 함께 자동으로 뜬다 — 캐스퍼가 유휴여도 코더의 완료·죽음·정지를 놓치지
+# 않기 위해서다 (역핑은 실전에서 누락된다). `--no-watch`로 끌 수 있다.
 #
 # 미설정 프로젝트에서는 무엇을 만들지 보여주고 y/N를 받는다 — 워크트리 생성은 되돌리기
 # 번거로우므로 한 번 짚고 간다.
@@ -90,11 +94,18 @@ do_init() {
 # ── 디스패치 ────────────────────────────────────────────────────
 case "${1:-}" in
   init)   shift; do_init; exit $?;;
-  status) shift; exec "$MAGI_HOME/scripts/magi-up.sh" --status "$@";;
+  status) shift; "$MAGI_HOME/scripts/magi-up.sh" --status "$@"; exec "$MAGI_HOME/scripts/watch.sh" status;;
+  watch)  shift; exec "$MAGI_HOME/scripts/watch.sh" "$@";;
   ping)   shift; exec "$MAGI_HOME/scripts/ping.sh" "$@";;
   lease)  shift; exec "$MAGI_HOME/scripts/lease.sh" "$@";;
   help|-h|--help) exec "$MAGI_HOME/scripts/magi-up.sh" --help;;
 esac
+
+# --no-watch는 여기서 걷어낸다 (magi-up.sh는 모르는 인자다)
+WATCH=1; ARGS=()
+for a in "$@"; do
+  case "$a" in --no-watch) WATCH=0;; *) ARGS+=("$a");; esac
+done
 
 # 기동 경로 — 미설정이면 먼저 셋업을 제안한다
 if [ -n "$(missing_worktrees)" ] || needs_journal; then
@@ -102,4 +113,15 @@ if [ -n "$(missing_worktrees)" ] || needs_journal; then
   echo
 fi
 
-exec "$MAGI_HOME/scripts/magi-up.sh" --attach "$@"
+# 노드 기동 → 워처 → attach 순. attach는 이 셸을 붙잡으므로 반드시 마지막이다.
+"$MAGI_HOME/scripts/magi-up.sh" ${ARGS+"${ARGS[@]}"}
+[ "$WATCH" = "1" ] && "$MAGI_HOME/scripts/watch.sh" start
+
+CASPAR=$(magi_session "$PROJ" claude)
+if tmux has-session -t "$CASPAR" 2>/dev/null; then
+  if [ -n "${TMUX:-}" ]; then
+    exec tmux switch-client -t "$CASPAR"   # 이미 tmux 안 — attach는 nested 경고
+  else
+    exec tmux attach -t "$CASPAR"
+  fi
+fi
